@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 import numpy as np
-import pandas as pd
 import gym
 
 
@@ -38,7 +37,7 @@ class QLearningAgent:
 
 
 class StockTradingEnv:
-    def __init__(self, states, initial_balance=10000.0, trading_fee=0.001, action_space=3):
+    def __init__(self, states, initial_balance=10000.0, trading_fee=0, action_space=3):
         self.states = states
         self.initial_balance = initial_balance
         self.trading_fee = trading_fee
@@ -50,81 +49,48 @@ class StockTradingEnv:
         # Define the observation space
         self.observation_space = len(states.columns)
         
-    class StockTradingEnv:
-        def __init__(self, states, initial_balance=10000.0, trading_fee=0.001, action_space=3):
-            self.states = states
-            self.initial_balance = initial_balance
-            self.trading_fee = trading_fee
-            self.action_space = action_space  # Buy, Sell, Hold
-            self.current_step = 0
-            self.balance = initial_balance
-            self.position = 0
-            
-            # Define the observation space
-            self.observation_space = len(states.columns)
-        
-    class StockTradingEnv:
-        def __init__(self, states, initial_balance=10000.0, trading_fee=0.001, action_space=3):
-            self.states = states
-            self.initial_balance = initial_balance
-            self.trading_fee = trading_fee
-            self.action_space = action_space  # Buy, Sell, Hold
-            self.current_step = 0
-            self.balance = initial_balance
-            self.position = 0
-            
-            # Define the observation space
-            self.observation_space = len(states.columns)
-        
     def step(self, action):
         current_state = self.states.iloc[self.current_step]
         
         reward = 0.0
         done = False
         
-        # Use self.balance directly without float conversion
-        if float(self.balance) > 0:  # Ensure balance is a scalar and works correctly
-            shares_to_buy = int(self.balance / current_state['Close'])
-            if shares_to_buy > 0:
-                cost = shares_to_buy * current_state['Close']
-                self.balance -= cost + (cost * self.trading_fee)
-                self.position += shares_to_buy
-        
-        elif action == 1:  # Sell
-            if self.position > 0:
+        if action == 0:  # Hold
+            # No action, no change to balance or position
+            pass
+            
+        elif action == 1:  # Buy
+            if float(self.balance) > 0.0:  # Only proceed if balance > 0
+                shares_to_buy = int(self.balance / current_state['Close'])
+                if shares_to_buy > 0.0:  # Only buy if shares can be purchased
+                    cost = shares_to_buy * current_state['Close']
+                    self.balance -= cost + (cost * self.trading_fee)  # Deduct cost and trading fee
+                    self.position += shares_to_buy  # Update position
+                else:
+                    reward -= 0.1  # Penalize if action is Buy but no funds available
+            else:
+                reward -= 0.1  # Penalize if action is Buy but no funds available
+
+        elif action == 2:  # Sell
+            if self.position > 0.0:  # Only sell if there are stocks to sell
                 proceeds = self.position * current_state['Close']
                 self.balance += proceeds - (proceeds * self.trading_fee)
-                self.position = 0
-        
+                self.position = 0  # Reset position
+            
         # Reward calculation
-        reward = self.balance - self.initial_balance  # Remove float conversion
+        reward = self.balance - self.initial_balance  # Reward based on final balance
         
-        done = self.current_step >= len(self.states) - 1
+        done = self.current_step >= len(self.states) - 1  # End condition
+        self.current_step += 1  # Increment the step correctly
         
-        self.current_step += 1
         return current_state.values, reward, done
-    
+
+
     def reset(self):
         self.current_step = 0
         self.balance = self.initial_balance
         self.position = 0
         return self.states.iloc[self.current_step].values
-
-    
-    def reset(self):
-        self.current_step = 0
-        self.balance = self.initial_balance
-        self.position = 0
-        return self.states.iloc[self.current_step].values
-
-
-    
-    def reset(self):
-        self.current_step = 0
-        self.balance = self.initial_balance
-        self.position = 0
-        return self.states.iloc[self.current_step].values
-
 
 
 def calculate_rsi(data, period=14):
@@ -181,7 +147,7 @@ def prepare_states(data):
     data['rsi'] = calculate_rsi(data)
     
     # Define state features
-    state_features = ['Close', 'Open', 'High', 'Low', 'Volume', 'ma_5', 'ma_20', 'ma_50', 'rsi']
+    state_features = ['Close','ma_5', 'ma_20', 'ma_50', 'rsi']
     states = data[state_features].dropna()  # Drop rows with NaN values due to moving average/RSI calculations
     return states
 
@@ -198,7 +164,6 @@ try:
 except Exception as e:
     print(f"An error occurred: {e}")
 
-
 # Initialize environment and agent
 env = StockTradingEnv(states)
 agent = QLearningAgent(state_space=states.shape[0], action_space=3)
@@ -208,7 +173,7 @@ timesteps = 100000
 for episode in range(timesteps):
     state = env.reset()
     done = False
-    total_reward = 0
+    total_reward = 0.0
     
     while not done:
         action = agent.choose_action(env.current_step)
@@ -216,7 +181,7 @@ for episode in range(timesteps):
         agent.update_Q_table(env.current_step, action, reward, env.current_step + 1)
         total_reward += reward
     
-    if episode % 1000 == 0:
-        print(f"Episode: {episode}, Total Reward: {total_reward}")
+    if episode % 10 == 0:  # Control frequency of print statements
+        print(f"Episode: {episode}, Total Reward: {total_reward.item()}, Current Balance: {env.balance.iloc[0]:.2f}")
 
 print("Training complete.")
